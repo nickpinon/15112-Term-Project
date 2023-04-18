@@ -300,14 +300,13 @@ def onMousePress(app, mouseX, mouseY):
 
     for button in app.buttonList:
         if button.testSelection(mouseX, mouseY):
+
             button.statusChange()
 
 def playNotes(app, freqList):
-    osc = Sine(0.05, 1, 0.002)
+    osc = Sine(0.05, 4, 0.002)
     osc.playSound(freqList)
 
-
-    
 
 
 def noteToFreq(app):
