@@ -9,6 +9,10 @@ from pydub.playback import play
 import struct
 import random
 
+def fastFourier(sampleList):
+    
+    pass
+
 
 def distance(x1, y1, x2, y2):
     return (((x1-x2)**2 + (y1-y2)**2)**0.5)
@@ -37,10 +41,6 @@ class Knob:
         self.prevY = self.y
         self.yOffset = remap(self.knobAngle, self.maxRotation, self.minRotation, -self.sensitivity, self.sensitivity)
         self.yDiff = self.prevY + self.yOffset
-
-
-
-
     
     def turnKnob(self, mouseX, mouseY):
         
@@ -108,14 +108,33 @@ class Button:
 
             self.status = True
 
-# class squareButton(Button):
-#     def __init__(self, name, x, y, width, height, onColor, offColor, border):
-#         super().__init__(name, x, y, onColor, offColor, border)
-#         self.width = width
-#         self.height = height
-#         self.currColor = self.offColor
-    
-        
+
+class squareButton:
+    def __init__(self, name, x, y, width, height, pressColor, offColor, border):
+        self.name = name
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.border = border
+        self.pressColor = pressColor
+        self.offColor = offColor
+        self.currColor = offColor
+        self.status = False
+
+
+    def testSelection(self, mouseX, mouseY):
+        if (mouseX >= self.x and mouseX <= self.x + self.width and 
+            mouseY >= self.y and mouseY <= self.y + self.height):
+            return True
+
+    def changeState(self):
+        if self.status == True:
+            self.status = False
+            
+        elif self.status == False:
+
+            self.status = True
 
 
 
@@ -141,17 +160,17 @@ class Envelope:
         self.width = width
         self.ySpace = self.y + self.height + 30
         self.attackKnob = Knob(self.x + 25, self.ySpace, 20, 1, 1000, 20, 50, -math.pi / 4, 5 * math.pi / 4)
-        self.decayKnob = Knob(self.x + 75, self.ySpace, 20, 1, 500, 20, 50, -math.pi / 4, 5 * math.pi / 4)
+        self.decayKnob = Knob(self.x + 75, self.ySpace, 20, 1, 1000, 20, 50, -math.pi / 4, 5 * math.pi / 4)
         self.sustainKnob = Knob(self.x + 125, self.ySpace, 20, 0, self.height, 0, 50, -math.pi / 4, 5 * math.pi / 4)
-        self.releaseKnob = Knob(self.x + 175, self.ySpace, 20, 1, 500, 20, 50, -math.pi / 4, 5 * math.pi / 4)
+        self.releaseKnob = Knob(self.x + 175, self.ySpace, 20, 1, 1000, 20, 50, -math.pi / 4, 5 * math.pi / 4)
         self.knobList = [self.attackKnob, self.decayKnob, self.sustainKnob, self.releaseKnob]
         
 
     def lineCords(self):
-        self.attack = self.attackKnob.currValue
-        self.decay = self.decayKnob.currValue
+        self.attack = remap(self.attackKnob.currValue, self.attackKnob.minValue, self.attackKnob.maxValue, 0, self.width/4)
+        self.decay = remap(self.decayKnob.currValue, self.decayKnob.minValue, self.decayKnob.maxValue, 0, self.width/4)
         self.sustain = self.sustainKnob.currValue
-        self.release = self.releaseKnob.currValue
+        self.release = remap(self.releaseKnob.currValue, self.releaseKnob.minValue, self.releaseKnob.maxValue, 0, self.width/4)
         cordList = [(self.x, self.height + self.y), (self.attack + self.x, self.y), (self.decay, self.sustain + self.y), (40, self.sustain + self.y), (self.release, self.height + self.y)]
         return cordList
 
@@ -172,14 +191,9 @@ class Oscillator:
         pass
     
     # add duration modifier 
-    def generateSound(self, freqList):
-        # sampleRate = 44100
-        # duration = 3000
-        # masterVolume = 0.02
-        qLevels = 16
+    def generateSound(self, freqList, filterType, cutoffFreq):
 
         sampleList = []
-
 
         for frequency in freqList:
             currFreq = [0] * int((self.duration * self.sampleRate / 1000))
@@ -198,17 +212,38 @@ class Oscillator:
             
             sampleList.append(currFreq)
 
-        byteData = b''           
-
-        # min and max amplitude values used for normalizing the audio
-        minValue = 0
-        maxValue = 0
+        combinedSamples = [0] * len(sampleList[0])
 
         for sampleIndex in range(len(sampleList[0])):
             currSample = 0
             for frequency in sampleList:
                 currSample += frequency[sampleIndex]
 
+            combinedSamples[sampleIndex] = currSample
+
+
+        filterCoeff = 1 / (1 + ((2 * math.pi * cutoffFreq) / self.sampleRate))
+
+        if filterType != None:
+            filteredList = [0] * len(combinedSamples)
+            for i in range(len(filteredList)):
+                if i > 0:
+                    filteredList[i] = filterCoeff * combinedSamples[i] + (1 - filterCoeff) * filteredList[i-1]
+                else:
+                    filteredList[i] = combinedSamples[i]
+        else:
+            filteredList = combinedSamples
+        
+        # min and max amplitude values used for normalizing the audio
+        minValue = 0
+        maxValue = 0
+
+        for sampleIndex in range(len(filteredList)):
+            # currSample = 0
+            # for frequency in sampleList:
+            #     currSample += frequency[sampleIndex]
+            currSample = filteredList[sampleIndex]
+            
             if currSample > maxValue:
                 maxValue = currSample
             elif currSample < minValue:
@@ -216,17 +251,18 @@ class Oscillator:
         
         print(minValue, maxValue)
 
+        byteData = b'' 
 
         # Generate singular audio data from combinding all
-        for sampleIndex in range(len(sampleList[0])):
-            currSample = 0
-            for frequency in sampleList:
-                currSample += frequency[sampleIndex]
+        for sampleIndex in range(len(filteredList)):
+            currSample = filteredList[sampleIndex]
+            # for frequency in sampleList:
+            #     currSample += frequency[sampleIndex]
 
             # remap the sample along the calculated min and max value range            
             remapedSample = remap(currSample, minValue, maxValue, -1, 1)
 
-            remapedSample = int(remapedSample * self.vol * (2 ** qLevels / 2))
+            remapedSample = int(remapedSample * self.vol * (2 ** self.qLevels / 2))
             
             amplitudeData = struct.pack('<h', remapedSample)
             
@@ -283,7 +319,7 @@ class Triangle(Oscillator):
 def onAppStart(app):
     app.background = rgb(165, 195, 216)
     # list containing free knobs
-    app.knobList = [Knob(650, 75, 20, 0, 100, 50, 50, -math.pi / 4, 5 * math.pi / 4),
+    app.knobList = [Knob(650, 75, 20, 0, 100, 70, 50, -math.pi / 4, 5 * math.pi / 4),
                     floatKnob(238, 90, 20, 0, 1, 0, 50, -math.pi / 4, 5 * math.pi / 4),
                     Knob(183, 90, 20, 1, 16, 1, 50, -math.pi / 4, 5 * math.pi / 4),
                     Knob(650, 150, 20, 100, 3000, 1000, 50, -math.pi / 4, 5 * math.pi / 4),
@@ -293,18 +329,21 @@ def onAppStart(app):
     app.detuneIndex = 1
     app.voiceIndex = 2
     
-    # app.squareButtonList = [squareButton('Export', 612, 18, 76, 16, 'blue', 'grey', 'black')]
-    # list containing all buttons on board
+    
+    app.squareButtonList = [squareButton('Export', 612, 18, 76, 16, 'black', 'grey', 'black')]
+    app.selectedSquareButton = None
+
     app.osc1 = [startOn('sine', 44, 76, 10, 'red', rgb(112, 16, 16), 'black'),
                 startOff('saw', 94, 76, 10, 'red', rgb(112, 16, 16), 'black'),
                 startOff('square', 44, 110, 10, 'red', rgb(112, 16, 16), 'black'),
                 startOff('triangle', 94, 110, 10, 'red', rgb(112, 16, 16), 'black')]
     
-    app.filter = [startOff('LP1', 327, 76, 10, 'red', rgb(112, 16, 16), 'black'),
-                startOff('LP2', 327, 111, 10, 'red', rgb(112, 16, 16), 'black'),
-                startOff('HP1', 327, 145, 10, 'red', rgb(112, 16, 16), 'black'),
-                startOff('HP2', 327, 180, 10, 'red', rgb(112, 16, 16), 'black')]
+    app.filter = [startOff('LP', 327, 76, 10, 'red', rgb(112, 16, 16), 'black'),
+                  startOff('HP', 327, 111, 10, 'red', rgb(112, 16, 16), 'black')]
 
+    # startOff('LP2', 327, 111, 10, 'red', rgb(112, 16, 16), 'black'),
+    #         startOff('HP1', 327, 145, 10, 'red', rgb(112, 16, 16), 'black'),
+    #         startOff('HP2', 327, 180, 10, 'red', rgb(112, 16, 16), 'black')
 
     app.buttonList = []
     app.buttonList.append(app.osc1)
@@ -322,12 +361,20 @@ def onAppStart(app):
     app.currOsc = 'sine'
     app.notes = ''
 
+    app.currSound = None
+
     # x, y, length, title
     app.labelCords = [(20, 41, 264, 'Oscillator'), (20, 217, 264, 'Envelope'), (303, 41, 137, 'Filter')]
-def redrawAll(app):
-    
-    # for squareButton in app.squareButtonList:
-    #     drawRect(squareButton.x, squareButton.y, squareButton.width, squareButton.height, fill='')
+def redrawAll(app): 
+
+
+    # draw square buttons
+    for squareButton in app.squareButtonList:
+        drawRect(squareButton.x, squareButton.y, squareButton.width, squareButton.height, fill=squareButton.currColor)
+        if squareButton.status == True:
+            squareButton.currColor = squareButton.pressColor
+        else:
+            squareButton.currColor = squareButton.offColor
 
     # draw buttons
     for buttonGroup in app.buttonList:
@@ -338,7 +385,7 @@ def redrawAll(app):
                 button.currColor = button.offColor
             
             drawCircle(button.x, button.y, button.r, fill=button.currColor, border=button.border, borderWidth=1.5)
-            drawLabel(f'{button.name}', button.x + button.r + 5, button.y, align='left')
+            drawLabel(f'{button.name}', button.x + button.r + 2, button.y, align='left')
 
     # draw free knobs    
     for knob in app.knobList:
@@ -403,7 +450,13 @@ def onMousePress(app, mouseX, mouseY):
             app.selectedKnob = i
             app.knobList[i].prevY = mouseY
             return 
-        
+    
+    for i in range(len(app.squareButtonList)):
+        if app.squareButtonList[i].testSelection(mouseX, mouseY):
+            app.selectedSquareButton = i
+            app.squareButtonList[i].changeState()
+            return
+
     # chheck for envelope knob changes 
     for envelope in app.envelopeList:
         for i in range(len(envelope.knobList)):
@@ -447,11 +500,21 @@ def clearButtonGroup(app, buttonList, index):
 def playNotes(app, freqList):
     voices = app.knobList[app.voiceIndex].currValue
     initialDetune = app.knobList[app.detuneIndex].currValue
-    volume = app.knobList[app.volumeIndex].currValue / 100
+    volume = remap(app.knobList[app.volumeIndex].currValue / 100, 0, 1, 0, 0.99)
     duration = app.knobList[3].currValue
+    cutoffFreq = app.knobList[4].currValue
 
     # remapping detune from 0-1 to values that produce usable results
     detune = remap(initialDetune, 0, 1, 0, 0.01)
+    
+    filterType = None
+    for button in app.filter:
+        if button.status == True:
+            if button.name == 'LP':
+                filterType = 'LP'
+            elif button.name == 'HP':
+                filterType = 'HP'
+            
 
 
     for button in app.osc1:
@@ -465,7 +528,7 @@ def playNotes(app, freqList):
             elif button.name == 'triangle':
                 osc = Triangle(volume, voices, detune, duration)
 
-    sound = osc.generateSound(freqList)
+    sound = osc.generateSound(freqList, filterType, cutoffFreq)
 
     attackTime = app.envelope1.knobList[0].currValue
     decayTime = app.envelope1.knobList[1].currValue
@@ -476,7 +539,7 @@ def playNotes(app, freqList):
     attack = sound[:attackTime].fade_in(duration=attackTime - 1)
     print(len(attack))
     # print('attack')
-    play(attack)
+
     
     decayRef = sound[attackTime:].fade(start=0, duration=decayTime - 1, to_gain=sustainLevel)
     decay = sound[attackTime: attackTime + decayTime].fade(start=0, duration=decayTime - 1, to_gain=sustainLevel)
@@ -495,7 +558,7 @@ def playNotes(app, freqList):
     # finalSound = decay
     print(len(finalSound))
     play(finalSound)
-
+    app.currSound = finalSound
     
 
 def noteToFreq(app):
@@ -518,6 +581,9 @@ def noteToFreq(app):
     app.notes = ''
     return freqList
 
+def export(app):
+    file = app.currSound.export('output.wav', format='wav')
+
 def onKeyPress(app, key):
 
     if key == 'backspace':
@@ -539,6 +605,9 @@ def onMouseRelease(app, mouseX, mouseY):
         else:
             app.knobList[app.selectedKnob].yOffset = app.knobList[app.selectedKnob].yDiff
 
+    if app.selectedSquareButton != None:
+        app.squareButtonList[app.selectedSquareButton].changeState()
+    app.selectedSquareButton = None
     app.selectedKnob = None
     app.envelopeKnob = False
 
